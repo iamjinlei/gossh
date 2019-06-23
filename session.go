@@ -1,0 +1,155 @@
+package ssh
+
+import (
+	"bufio"
+	"fmt"
+	"io"
+	"io/ioutil"
+	"time"
+
+	gossh "golang.org/x/crypto/ssh"
+)
+
+type Session struct {
+	c        *gossh.Client
+	s        *gossh.Session
+	stdin    io.WriteCloser
+	stdout   io.Reader
+	stderr   io.Reader
+	signalCh chan bool
+}
+
+func NewSession(hostport, user, pwd string) (*Session, error) {
+	var am gossh.AuthMethod
+	if len(pwd) > 0 {
+		am = gossh.Password(pwd)
+	} else {
+		pk, err := ioutil.ReadFile("~/.ssh/id_rsa")
+		if err != nil {
+			return nil, err
+		}
+		signer, err := gossh.ParsePrivateKey(pk)
+		if err != nil {
+			return nil, err
+		}
+		am = gossh.PublicKeys(signer)
+	}
+
+	cfg := &gossh.ClientConfig{
+		User:            user,
+		Auth:            []gossh.AuthMethod{am},
+		HostKeyCallback: gossh.InsecureIgnoreHostKey(),
+	}
+
+	c, err := gossh.Dial("tcp", hostport, cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	s, err := c.NewSession()
+	if err != nil {
+		c.Close()
+		return nil, err
+	}
+
+	/*
+		modes := gossh.TerminalModes{
+			gossh.ECHO:          0,     // disable echoing
+			gossh.TTY_OP_ISPEED: 14400, // input speed = 14.4kbaud
+			gossh.TTY_OP_OSPEED: 14400, // output speed = 14.4kbaud
+		}
+
+		if err := s.RequestPty("xterm", 80, 40, modes); err != nil {
+			c.Close()
+			return nil, err
+		}
+	*/
+	stdout, err := s.StdoutPipe()
+	if err != nil {
+		c.Close()
+		return nil, err
+	}
+
+	stderr, err := s.StderrPipe()
+	if err != nil {
+		c.Close()
+		return nil, err
+	}
+
+	stdin, err := s.StdinPipe()
+	if err != nil {
+		c.Close()
+		return nil, err
+	}
+
+	if err := s.Start("/bin/bash"); err != nil {
+		c.Close()
+		return nil, err
+	}
+
+	return &Session{
+		c:        c,
+		s:        s,
+		stdin:    stdin,
+		stdout:   stdout,
+		stderr:   stderr,
+		signalCh: make(chan bool),
+	}, nil
+}
+
+func (s *Session) Run(cmd string) (chan []byte, chan []byte, error) {
+	endMark := []byte(fmt.Sprintf("$$%v$$", time.Now().UnixNano()))
+
+	recv := func(r io.Reader, out chan []byte) {
+		br := bufio.NewReaderSize(r, 1024)
+		var bytes []byte
+
+		defer close(out)
+
+		for {
+			data, isPrefix, err := br.ReadLine()
+
+			if err != nil && err != io.EOF {
+				if len(bytes) > 0 {
+					out <- bytes
+				}
+
+				out <- []byte(fmt.Sprintf("error reading pipe: %v", err))
+				return
+			}
+
+			bytes = append(bytes, data...)
+			if isPrefix {
+				continue
+			}
+
+			if len(bytes) == len(endMark) && string(bytes) == string(endMark) {
+				return
+			}
+			out <- bytes
+			bytes = nil
+		}
+	}
+
+	if _, err := s.stdin.Write([]byte(cmd + "\n")); err != nil {
+		return nil, nil, err
+	}
+	// TODO: if the following writes fail, how could we clear the data from stdout/stderr
+	if _, err := s.stdin.Write([]byte("echo '" + string(endMark) + "'\n")); err != nil {
+		return nil, nil, err
+	}
+	if _, err := s.stdin.Write([]byte("echo '" + string(endMark) + "' >&2\n")); err != nil {
+		return nil, nil, err
+	}
+
+	outCh := make(chan []byte, 16)
+	errCh := make(chan []byte, 16)
+	go recv(s.stdout, outCh)
+	go recv(s.stderr, errCh)
+
+	return outCh, errCh, nil
+}
+
+func (s *Session) Close() error {
+	return s.c.Close()
+}
