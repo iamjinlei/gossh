@@ -4,6 +4,7 @@ An SSH session wrapper that allows executing multiple commands within the same s
 
 ## Example
 ```
+// leave password as empty string if use public key auth method
 s, err := NewSession("127.0.0.1:22", "username", "password")
 
 outCh, errCh, err := s.Run("echo 'Hello world!'")
