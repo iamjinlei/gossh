@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"os"
+	"path/filepath"
 	"time"
 
 	gossh "golang.org/x/crypto/ssh"
@@ -24,7 +26,7 @@ func NewSession(hostport, user, pwd string) (*Session, error) {
 	if len(pwd) > 0 {
 		am = gossh.Password(pwd)
 	} else {
-		pk, err := ioutil.ReadFile("~/.ssh/id_rsa")
+		pk, err := ioutil.ReadFile(filepath.Join(os.Getenv("HOME"), "/.ssh/id_rsa"))
 		if err != nil {
 			return nil, err
 		}

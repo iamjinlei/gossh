@@ -7,7 +7,7 @@ import (
 )
 
 func TestSession(t *testing.T) {
-	s, err := NewSession("127.0.0.1:22", "root", "pwd")
+	s, err := NewSession("127.0.0.1:22", "lei", "")
 	assert.NoError(t, err)
 
 	exec := func(cmd string) {
@@ -20,10 +20,11 @@ func TestSession(t *testing.T) {
 			t.Log("ERROR: " + string(line))
 		}
 	}
+
 	exec("echo 'Hello world!'")
 	exec("whoami")
 	exec("pwd")
 	exec("which sh")
 	exec("awk -F= '/^NAME/{print $2}' /etc/os-release")
-	exec("yum install -y git gcc-c++ ncurses-devel python-devel libevent-devel")
+	exec("find ~/ | head -n 20")
 }
