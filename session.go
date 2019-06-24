@@ -13,12 +13,11 @@ import (
 )
 
 type Session struct {
-	c        *gossh.Client
-	s        *gossh.Session
-	stdin    io.WriteCloser
-	stdout   io.Reader
-	stderr   io.Reader
-	signalCh chan bool
+	c      *gossh.Client
+	s      *gossh.Session
+	stdin  io.WriteCloser
+	stdout io.Reader
+	stderr io.Reader
 }
 
 func NewSession(hostport, user, pwd string) (*Session, error) {
@@ -41,6 +40,8 @@ func NewSession(hostport, user, pwd string) (*Session, error) {
 		User:            user,
 		Auth:            []gossh.AuthMethod{am},
 		HostKeyCallback: gossh.InsecureIgnoreHostKey(),
+		BannerCallback:  func(message string) error { return nil }, // ignore banner
+		Timeout:         30 * time.Second,
 	}
 
 	c, err := gossh.Dial("tcp", hostport, cfg)
@@ -54,18 +55,6 @@ func NewSession(hostport, user, pwd string) (*Session, error) {
 		return nil, err
 	}
 
-	/*
-		modes := gossh.TerminalModes{
-			gossh.ECHO:          0,     // disable echoing
-			gossh.TTY_OP_ISPEED: 14400, // input speed = 14.4kbaud
-			gossh.TTY_OP_OSPEED: 14400, // output speed = 14.4kbaud
-		}
-
-		if err := s.RequestPty("xterm", 80, 40, modes); err != nil {
-			c.Close()
-			return nil, err
-		}
-	*/
 	stdout, err := s.StdoutPipe()
 	if err != nil {
 		c.Close()
@@ -90,17 +79,16 @@ func NewSession(hostport, user, pwd string) (*Session, error) {
 	}
 
 	return &Session{
-		c:        c,
-		s:        s,
-		stdin:    stdin,
-		stdout:   stdout,
-		stderr:   stderr,
-		signalCh: make(chan bool),
+		c:      c,
+		s:      s,
+		stdin:  stdin,
+		stdout: stdout,
+		stderr: stderr,
 	}, nil
 }
 
 func (s *Session) Run(cmd string) (chan []byte, chan []byte, error) {
-	endMark := []byte(fmt.Sprintf("$$%v$$", time.Now().UnixNano()))
+	endMark := []byte(fmt.Sprintf("$$__%v__$$", time.Now().UnixNano()))
 
 	recv := func(r io.Reader, out chan []byte) {
 		br := bufio.NewReaderSize(r, 1024)
