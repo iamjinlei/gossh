@@ -106,6 +106,8 @@ func (s *Session) Run(cmd string) (chan []byte, chan []byte, error) {
 
 				out <- []byte(fmt.Sprintf("error reading pipe: %v", err))
 				return
+			} else if err == io.EOF {
+				return
 			}
 
 			bytes = append(bytes, data...)
