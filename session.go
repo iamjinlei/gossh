@@ -20,7 +20,7 @@ type Session struct {
 	stderr io.Reader
 }
 
-func NewSession(hostport, user, pwd string) (*Session, error) {
+func NewSession(hostport, user, pwd string, to time.Duration) (*Session, error) {
 	var am gossh.AuthMethod
 	if len(pwd) > 0 {
 		am = gossh.Password(pwd)
@@ -41,7 +41,7 @@ func NewSession(hostport, user, pwd string) (*Session, error) {
 		Auth:            []gossh.AuthMethod{am},
 		HostKeyCallback: gossh.InsecureIgnoreHostKey(),
 		BannerCallback:  func(message string) error { return nil }, // ignore banner
-		Timeout:         30 * time.Second,
+		Timeout:         to,
 	}
 
 	c, err := gossh.Dial("tcp", hostport, cfg)
@@ -116,6 +116,7 @@ func (s *Session) Run(cmd string) (chan []byte, chan []byte, error) {
 			if len(bytes) == len(endMark) && string(bytes) == string(endMark) {
 				return
 			}
+
 			out <- bytes
 			bytes = nil
 		}
