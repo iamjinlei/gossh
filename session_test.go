@@ -14,9 +14,9 @@ func TestSession(t *testing.T) {
 	defer s.Close()
 
 	exec := func(cmd string) {
-		outCh, errCh, err := s.Run(cmd)
+		c, err := s.Run(cmd)
 		assert.NoError(t, err)
-		Log(outCh, errCh)
+		c.TailLog()
 	}
 
 	exec("echo 'Hello world!'")

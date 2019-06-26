@@ -71,7 +71,6 @@ func (h *sessionHandle) close() {
 
 type Session struct {
 	c *gossh.Client
-	h *sessionHandle
 }
 
 func NewSession(hostport, user, pwd string, to time.Duration) (*Session, error) {
@@ -103,19 +102,45 @@ func NewSession(hostport, user, pwd string, to time.Duration) (*Session, error) 
 		return nil, err
 	}
 
-	h, err := newSessionHandle(c, "/bin/bash")
-	if err != nil {
-		c.Close()
-		return nil, err
-	}
-
 	return &Session{
 		c: c,
-		h: h,
 	}, nil
 }
 
-func (s *Session) Run(cmd string) (chan []byte, chan []byte, error) {
+type Cmd struct {
+	h     *sessionHandle
+	outCh chan []byte
+	errCh chan []byte
+}
+
+func (c *Cmd) TailLog() {
+	var wg sync.WaitGroup
+	if c.outCh != nil {
+		wg.Add(1)
+		go func(g *sync.WaitGroup) {
+			for line := range c.outCh {
+				fmt.Printf("%v\n", string(line))
+			}
+			g.Done()
+		}(&wg)
+	}
+	if c.errCh != nil {
+		wg.Add(1)
+		go func(g *sync.WaitGroup) {
+			for line := range c.errCh {
+				fmt.Printf("%v\n", string(line))
+			}
+			g.Done()
+		}(&wg)
+	}
+	wg.Wait()
+}
+
+func (c *Cmd) Close() {
+	c.h.close()
+}
+
+func (s *Session) Run(cmd string) (*Cmd, error) {
 	endMark := []byte(fmt.Sprintf("$$__%v__$$", time.Now().UnixNano()))
 
 	recv := func(r io.Reader, out chan []byte) {
@@ -152,23 +177,32 @@ func (s *Session) Run(cmd string) (chan []byte, chan []byte, error) {
 		}
 	}
 
-	if _, err := s.h.stdin.Write([]byte(cmd + "\n")); err != nil {
-		return nil, nil, err
+	h, err := newSessionHandle(s.c, "/bin/bash")
+	if err != nil {
+		return nil, err
+	}
+
+	if _, err := h.stdin.Write([]byte(cmd + "\n")); err != nil {
+		return nil, err
 	}
 	// TODO: if the following writes fail, how could we clear the data from stdout/stderr
-	if _, err := s.h.stdin.Write([]byte("echo '" + string(endMark) + "'\n")); err != nil {
-		return nil, nil, err
+	if _, err := h.stdin.Write([]byte("echo '" + string(endMark) + "'\n")); err != nil {
+		return nil, err
 	}
-	if _, err := s.h.stdin.Write([]byte("echo '" + string(endMark) + "' >&2\n")); err != nil {
-		return nil, nil, err
+	if _, err := h.stdin.Write([]byte("echo '" + string(endMark) + "' >&2\n")); err != nil {
+		return nil, err
 	}
 
 	outCh := make(chan []byte, 16)
 	errCh := make(chan []byte, 16)
-	go recv(s.h.stdout, outCh)
-	go recv(s.h.stderr, errCh)
+	go recv(h.stdout, outCh)
+	go recv(h.stderr, errCh)
 
-	return outCh, errCh, nil
+	return &Cmd{
+		h:     h,
+		outCh: outCh,
+		errCh: errCh,
+	}, nil
 }
 
 func (s *Session) CopyTo(src string, target string) error {
@@ -325,30 +359,6 @@ func copyFileTo(rw *bufio.ReadWriter, src string) error {
 	return handleScpResp(rw)
 }
 
-func Log(outCh chan []byte, errCh chan []byte) {
-	var wg sync.WaitGroup
-	if outCh != nil {
-		wg.Add(1)
-		go func(g *sync.WaitGroup) {
-			for line := range outCh {
-				fmt.Printf("%v\n", string(line))
-			}
-			g.Done()
-		}(&wg)
-	}
-	if errCh != nil {
-		wg.Add(1)
-		go func(g *sync.WaitGroup) {
-			for line := range errCh {
-				fmt.Printf("%v\n", string(line))
-			}
-			g.Done()
-		}(&wg)
-	}
-	wg.Wait()
-}
-
 func (s *Session) Close() error {
-	s.h.close()
 	return s.c.Close()
 }
