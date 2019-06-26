@@ -7,6 +7,9 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
+	"sync"
 	"time"
 
 	gossh "golang.org/x/crypto/ssh"
@@ -141,6 +144,140 @@ func (s *Session) Run(cmd string) (chan []byte, chan []byte, error) {
 	go recv(s.stderr, errCh)
 
 	return outCh, errCh, nil
+}
+
+func (s *Session) CopyTo(src string, target string) error {
+	// The scp implementation is heavily influenced by https://github.com/deoxxa/scp
+	sess, err := s.c.NewSession()
+	if err != nil {
+		return err
+	}
+	defer sess.Close()
+
+	stdout, err := sess.StdoutPipe()
+	if err != nil {
+		return err
+	}
+
+	stdin, err := sess.StdinPipe()
+	if err != nil {
+		return err
+	}
+
+	rw := bufio.NewReadWriter(bufio.NewReader(stdout), bufio.NewWriter(stdin))
+
+	if err := sess.Start("scp -tr ~/"); err != nil {
+		return err
+	}
+
+	//fi, err := os.Stat(src)
+
+	if err := sendScpCmd(fmt.Sprintf("D0755 0 %s\n", target+"_1")); err != nil {
+		return err
+	}
+	if err := s.copyFileTo(rw, src); err != ni {
+		return err
+	}
+	if err := sendScpCmd(fmt.Sprintf("D0755 0 %s\n", target+"_2")); err != nil {
+		return err
+	}
+	if err := s.copyFileTo(rw, src); err != ni {
+		return err
+	}
+
+	return s.copyFileTo(rw, src)
+}
+
+func sendScpCmd(rw *bufio.ReadWriter, cmd string) error {
+	if _, err := rw.WriteString(cmd + "\n"); err != nil {
+		return err
+	}
+	if err := rw.Flush(); err != nil {
+		return err
+	}
+	if err := rw.WriteByte(0); err != nil {
+		return err
+	}
+	if err := rw.Flush(); err != nil {
+		return err
+	}
+	_, err := handleScpResp(rw)
+	return err
+}
+
+func handleScpResp(rw *bufio.ReadWriter) ([]warnings, error) {
+	var warnings []string
+	if b, err := rw.ReadByte(); err != nil {
+		return nil, err
+	} else if b == 1 || b == 2 {
+		msg, err := rw.ReadString('\n')
+		if err != nil {
+			return nil, err
+		}
+
+		msg = strings.TrimSpace(msg)
+		if b == 2 {
+			return nil, fmt.Errorf(msg)
+		}
+
+		warnings = append(warnings, msg)
+	}
+
+	return warnings, nil
+}
+
+func copyFileTo(rw *bufio.ReadWriter, src string) error {
+	fi, err := os.Stat(src)
+	if err != nil {
+		return err
+	}
+
+	if err := sendScpCmd(fmt.Sprintf("C0%s %d %s\n", strconv.FormatUint(uint64(fi.Mode()), 8), fi.Size(), fi.Name())); err != nil {
+		return err
+	}
+
+	file, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(rw, file); err != nil {
+		return err
+	}
+	if err := rw.WriteByte(0); err != nil {
+		return err
+	}
+	if err := rw.Flush(); err != nil {
+		return err
+	}
+
+	if _, err := handleScpResp(rw); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func Log(outCh chan []byte, errCh chan []byte) {
+	var wg sync.WaitGroup
+	if outCh != nil {
+		wg.Add(1)
+		go func(g *sync.WaitGroup) {
+			for line := range outCh {
+				fmt.Printf("%v\n", string(line))
+			}
+			g.Done()
+		}(&wg)
+	}
+	if errCh != nil {
+		wg.Add(1)
+		go func(g *sync.WaitGroup) {
+			for line := range errCh {
+				fmt.Printf("%v\n", string(line))
+			}
+			g.Done()
+		}(&wg)
+	}
+	wg.Wait()
 }
 
 func (s *Session) Close() error {
