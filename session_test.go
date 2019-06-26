@@ -22,9 +22,7 @@ func TestSession(t *testing.T) {
 	exec("echo 'Hello world!'")
 	exec("whoami")
 	exec("pwd")
-	exec("which sh")
-	exec("awk -F= '/^NAME/{print $2}' /etc/os-release")
-	exec("find ~/ | head -n 20")
+	exec("find ~/ | head -n 5")
 
-	assert.NoError(t, s.CopyTo("/Users/lei/go/src/github.com/iamjinlei/ssh/session.go", "scp_test"))
+	assert.NoError(t, s.CopyTo(".", "scp_test_1/scp_test_2"))
 }
