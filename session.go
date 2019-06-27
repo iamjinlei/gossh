@@ -123,6 +123,10 @@ func NewSessionWithRetry(hostport, user, pwd string, to time.Duration) (*Session
 		ticker := time.NewTicker(time.Second)
 		timeout := time.After(deadline.Sub(time.Now()))
 		for err != nil {
+			if strings.Contain(err.Error(), "unable to authenticate") {
+				return nil, err
+			}
+
 			select {
 			case <-timeout:
 				return nil, fmt.Errorf("connection timed out %v", err)
