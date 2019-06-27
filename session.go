@@ -15,17 +15,17 @@ import (
 	"sync"
 	"time"
 
-	gossh "golang.org/x/crypto/ssh"
+	ssh "golang.org/x/crypto/ssh"
 )
 
 type sessionHandle struct {
-	s      *gossh.Session
+	s      *ssh.Session
 	stdin  io.WriteCloser
 	stdout io.Reader
 	stderr io.Reader
 }
 
-func newSessionHandle(c *gossh.Client, cmd string) (*sessionHandle, error) {
+func newSessionHandle(c *ssh.Client, cmd string) (*sessionHandle, error) {
 	s, err := c.NewSession()
 	if err != nil {
 		return nil, err
@@ -70,36 +70,47 @@ func (h *sessionHandle) close() {
 }
 
 type Session struct {
-	c *gossh.Client
+	c *ssh.Client
 }
 
 func NewSession(hostport, user, pwd string, to time.Duration) (*Session, error) {
-	var am gossh.AuthMethod
+	var am ssh.AuthMethod
 	if len(pwd) > 0 {
-		am = gossh.Password(pwd)
+		am = ssh.Password(pwd)
 	} else {
 		pk, err := ioutil.ReadFile(filepath.Join(os.Getenv("HOME"), "/.ssh/id_rsa"))
 		if err != nil {
 			return nil, err
 		}
-		signer, err := gossh.ParsePrivateKey(pk)
+		signer, err := ssh.ParsePrivateKey(pk)
 		if err != nil {
 			return nil, err
 		}
-		am = gossh.PublicKeys(signer)
+		am = ssh.PublicKeys(signer)
 	}
 
-	cfg := &gossh.ClientConfig{
-		User:            user,
-		Auth:            []gossh.AuthMethod{am},
-		HostKeyCallback: gossh.InsecureIgnoreHostKey(),
-		BannerCallback:  func(message string) error { return nil }, // ignore banner
-		Timeout:         to,
-	}
+	deadline := time.Now().Add(to)
+	ticker := time.NewTicker(time.Second)
+	expire := time.NewTimer(to)
+	var c *ssh.Client
+	var err error
+	for c == nil {
+		select {
+		case <-expire.C:
+			return nil, err
+		case <-ticker.C:
+			cfg := &ssh.ClientConfig{
+				User:            user,
+				Auth:            []ssh.AuthMethod{am},
+				HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+				BannerCallback:  func(message string) error { return nil }, // ignore banner
+				Timeout:         deadline.Sub(time.Now()),
+			}
 
-	c, err := gossh.Dial("tcp", hostport, cfg)
-	if err != nil {
-		return nil, err
+			if c, err = ssh.Dial("tcp", hostport, cfg); err != nil {
+				c = nil
+			}
+		}
 	}
 
 	return &Session{
@@ -265,7 +276,7 @@ func handleScpResp(rw *bufio.ReadWriter) error {
 	return nil
 }
 
-func copyPathTo(c *gossh.Client, src, target string) error {
+func copyPathTo(c *ssh.Client, src, target string) error {
 	// start sink from the target
 	h, err := newSessionHandle(c, "scp -tr "+target)
 	if err != nil {
