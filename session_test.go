@@ -8,7 +8,7 @@ import (
 )
 
 func TestSession(t *testing.T) {
-	s, err := NewSessionWithRetry("127.0.0.1:22", "lei", "", time.Minute)
+	s, err := NewSessionWithRetry("127.0.0.1:22", "lei", "", "", time.Minute)
 	assert.NoError(t, err)
 
 	defer s.Close()
