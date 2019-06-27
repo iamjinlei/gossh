@@ -89,33 +89,51 @@ func NewSession(hostport, user, pwd string, to time.Duration) (*Session, error) 
 		am = ssh.PublicKeys(signer)
 	}
 
-	deadline := time.Now().Add(to)
-	ticker := time.NewTicker(time.Second)
-	expire := time.NewTimer(to)
-	var c *ssh.Client
-	var err error
-	for c == nil {
-		select {
-		case <-expire.C:
-			return nil, err
-		case <-ticker.C:
-			cfg := &ssh.ClientConfig{
-				User:            user,
-				Auth:            []ssh.AuthMethod{am},
-				HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-				BannerCallback:  func(message string) error { return nil }, // ignore banner
-				Timeout:         deadline.Sub(time.Now()),
-			}
+	if int64(to) == 0 {
+		to = 365 * 24 * time.Hour
+	}
 
-			if c, err = ssh.Dial("tcp", hostport, cfg); err != nil {
-				c = nil
-			}
-		}
+	cfg := &ssh.ClientConfig{
+		User:            user,
+		Auth:            []ssh.AuthMethod{am},
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		BannerCallback:  func(message string) error { return nil }, // ignore banner
+		Timeout:         to,
+	}
+
+	c, err := ssh.Dial("tcp", hostport, cfg)
+	if err != nil {
+		return nil, err
 	}
 
 	return &Session{
 		c: c,
 	}, nil
+}
+
+func NewSessionWithRetry(hostport, user, pwd string, to time.Duration) (*Session, error) {
+	if int64(to) == 0 {
+		to = 365 * 24 * time.Hour
+	}
+
+	deadline := time.Now().Add(to)
+
+	s, err := NewSession(hostport, user, pwd, time.Second)
+	if err != nil {
+		ticker := time.NewTicker(time.Second)
+
+		timeout := time.After(deadline.Sub(time.Now()))
+		for err != nil {
+			select {
+			case <-timeout:
+				return nil, fmt.Errorf("connection timed out %v", err)
+			case <-ticker.C:
+				s, err = NewSession(hostport, user, pwd, time.Second)
+			}
+		}
+	}
+
+	return s, err
 }
 
 type Cmd struct {
