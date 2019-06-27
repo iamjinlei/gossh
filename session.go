@@ -78,7 +78,10 @@ func NewSession(hostport, user, pwd string, skPath string, to time.Duration) (*S
 	if len(pwd) > 0 {
 		am = ssh.Password(pwd)
 	} else {
-		pk, err := ioutil.ReadFile(filepath.Join(os.Getenv("HOME"), "/.ssh/id_rsa"))
+		if skPath == "" {
+			skPath = filepath.Join(os.Getenv("HOME"), "/.ssh/id_rsa")
+		}
+		pk, err := ioutil.ReadFile(skPath)
 		if err != nil {
 			return nil, err
 		}
