@@ -1,6 +1,6 @@
 // Acknowledgement: the scp implementation is heavily influenced by https://github.com/deoxxa/scp
 
-package ssh
+package gossh
 
 import (
 	"bufio"
