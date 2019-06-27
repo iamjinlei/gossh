@@ -121,7 +121,6 @@ func NewSessionWithRetry(hostport, user, pwd string, to time.Duration) (*Session
 	s, err := NewSession(hostport, user, pwd, time.Second)
 	if err != nil {
 		ticker := time.NewTicker(time.Second)
-
 		timeout := time.After(deadline.Sub(time.Now()))
 		for err != nil {
 			select {
