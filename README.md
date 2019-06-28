@@ -12,7 +12,7 @@ if err != nil {
     log.Fatal("error executing command")
 }
 for line := range c.CombinedOut() {
-	fmt.Printf("%v\n", string(line))
+    fmt.Printf("%v\n", string(line))
 }
 
 // Support recursive dir copy
