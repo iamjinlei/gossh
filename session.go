@@ -192,7 +192,7 @@ func (c *Cmd) Close() {
 }
 
 func (s *Session) Run(cmd string) (*Cmd, error) {
-	endMark := []byte(fmt.Sprintf("$$__%v__$$", time.Now().UnixNano()))
+	endMark := fmt.Sprintf("$$__%v__$$", time.Now().UnixNano())
 
 	recv := func(r io.Reader, out chan []byte) {
 		br := bufio.NewReaderSize(r, 1024)
@@ -219,7 +219,7 @@ func (s *Session) Run(cmd string) (*Cmd, error) {
 				continue
 			}
 
-			if len(bytes) == len(endMark) && string(bytes) == string(endMark) {
+			if len(bytes) == len(endMark) && string(bytes) == endMark {
 				return
 			}
 
@@ -237,10 +237,10 @@ func (s *Session) Run(cmd string) (*Cmd, error) {
 		return nil, err
 	}
 	// TODO: if the following writes fail, how could we clear the data from stdout/stderr
-	if _, err := h.stdin.Write([]byte("echo '" + string(endMark) + "'\n")); err != nil {
+	if _, err := h.stdin.Write([]byte("echo '" + endMark + "'\n")); err != nil {
 		return nil, err
 	}
-	if _, err := h.stdin.Write([]byte("echo '" + string(endMark) + "' >&2\n")); err != nil {
+	if _, err := h.stdin.Write([]byte("echo '" + endMark + "' >&2\n")); err != nil {
 		return nil, err
 	}
 
