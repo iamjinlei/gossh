@@ -145,27 +145,43 @@ type Cmd struct {
 	errCh chan []byte
 }
 
-func (c *Cmd) TailLog() {
+func (c *Cmd) Stdout() chan []byte {
+	return c.outCh
+}
+
+func (c *Cmd) Stderr() chan []byte {
+	return c.errCh
+}
+
+func (c *Cmd) CombinedOut() chan []byte {
+	ch := make(chan []byte)
+
 	var wg sync.WaitGroup
 	if c.outCh != nil {
 		wg.Add(1)
-		go func(g *sync.WaitGroup) {
+		go func(g *sync.WaitGroup, out chan []byte) {
 			for line := range c.outCh {
-				fmt.Printf("%v\n", string(line))
+				out <- line
 			}
 			g.Done()
-		}(&wg)
+		}(&wg, ch)
 	}
 	if c.errCh != nil {
 		wg.Add(1)
-		go func(g *sync.WaitGroup) {
+		go func(g *sync.WaitGroup, out chan []byte) {
 			for line := range c.errCh {
-				fmt.Printf("%v\n", string(line))
+				out <- line
 			}
 			g.Done()
-		}(&wg)
+		}(&wg, ch)
 	}
-	wg.Wait()
+
+	go func(g *sync.WaitGroup, out chan []byte) {
+		g.Wait()
+		close(out)
+	}(&wg, ch)
+
+	return ch
 }
 
 func (c *Cmd) Close() {

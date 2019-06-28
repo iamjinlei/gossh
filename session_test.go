@@ -1,6 +1,7 @@
 package gossh
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -16,7 +17,9 @@ func TestSession(t *testing.T) {
 	exec := func(cmd string) {
 		c, err := s.Run(cmd)
 		assert.NoError(t, err)
-		c.TailLog()
+		for line := range c.CombinedOut() {
+			fmt.Printf("%v\n", string(line))
+		}
 	}
 
 	exec("echo 'Hello world!'")
