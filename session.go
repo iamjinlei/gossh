@@ -73,12 +73,15 @@ type Session struct {
 	c *ssh.Client
 }
 
-func NewSession(hostport, user, pwd string, to time.Duration) (*Session, error) {
+func NewSession(hostport, user, pwd string, skPath string, to time.Duration) (*Session, error) {
 	var am ssh.AuthMethod
 	if len(pwd) > 0 {
 		am = ssh.Password(pwd)
 	} else {
-		pk, err := ioutil.ReadFile(filepath.Join(os.Getenv("HOME"), "/.ssh/id_rsa"))
+		if skPath == "" {
+			skPath = filepath.Join(os.Getenv("HOME"), "/.ssh/id_rsa")
+		}
+		pk, err := ioutil.ReadFile(skPath)
 		if err != nil {
 			return nil, err
 		}
@@ -111,14 +114,14 @@ func NewSession(hostport, user, pwd string, to time.Duration) (*Session, error) 
 	}, nil
 }
 
-func NewSessionWithRetry(hostport, user, pwd string, to time.Duration) (*Session, error) {
+func NewSessionWithRetry(hostport, user, pwd string, skPath string, to time.Duration) (*Session, error) {
 	if int64(to) == 0 {
 		to = 365 * 24 * time.Hour
 	}
 
 	deadline := time.Now().Add(to)
 
-	s, err := NewSession(hostport, user, pwd, time.Second)
+	s, err := NewSession(hostport, user, pwd, skPath, time.Second)
 	if err != nil {
 		ticker := time.NewTicker(time.Second)
 		timeout := time.After(deadline.Sub(time.Now()))
@@ -131,7 +134,7 @@ func NewSessionWithRetry(hostport, user, pwd string, to time.Duration) (*Session
 			case <-timeout:
 				return nil, fmt.Errorf("connection timed out %v", err)
 			case <-ticker.C:
-				s, err = NewSession(hostport, user, pwd, time.Second)
+				s, err = NewSession(hostport, user, pwd, skPath, time.Second)
 			}
 		}
 	}
