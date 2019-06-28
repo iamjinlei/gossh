@@ -11,7 +11,9 @@ c, err := s.Run("echo 'Hello world!'")
 if err != nil {
     log.Fatal("error executing command")
 }
-c.TailLog()
+for line := range c.CombinedOut() {
+	fmt.Printf("%v\n", string(line))
+}
 
 // Support recursive dir copy
 s.CopyTo("src_path", "remote_path")
